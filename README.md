@@ -29,7 +29,8 @@ app ──► server (encryptor) ──► content-blind proxy ──► spoke (
 
 Each edge imports this library; no edge trusts the transport, only the
 envelopes and the registry. Consumed by `analytics-client`, `analytics-hub`,
-`analytics-edge`, and `analytics-spoke`.
+`analytics-edge`, and `analytics-spoke`. See
+[docs/ONBOARDING.md](docs/ONBOARDING.md) for install + release notes.
 
 ## Install
 

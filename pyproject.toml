@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "analytics-secrets"
+version = "0.6.0"
+description = "PQ-hybrid E2EE secrets module (ML-KEM-768 + X25519, ML-DSA-65, AES-256-GCM) for the analytics hub/spoke stack"
+requires-python = ">=3.11"
+dependencies = ["cryptography>=50"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.scripts]
+analytics-manifest = "secretskit._manifest_cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

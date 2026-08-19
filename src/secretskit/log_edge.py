@@ -208,7 +208,20 @@ class LogEdgeClient:
 
     def _signed_request(self, url: str) -> urllib.request.Request:
         req = urllib.request.Request(url)
-        if self._cfg.token:
+        if self._signing and self._cfg.sender_id:
+            from ._transport_auth import sign_request
+            from urllib.parse import urlparse
+            parsed = urlparse(url)
+            path = parsed.path or "/"
+            headers = sign_request(
+                self._signing,
+                spoke_id=self._cfg.sender_id,
+                method="GET",
+                path=path,
+            )
+            for k, v in headers.items():
+                req.add_header(k, v)
+        elif self._cfg.token:
             req.add_header("Authorization", f"Bearer {self._cfg.token}")
         return req
 
@@ -250,7 +263,20 @@ class LogEdgeClient:
         req = urllib.request.Request(
             url, data=data, method="POST", headers={"Content-Type": "application/json"}
         )
-        if self._cfg.token:
+        if self._signing and self._cfg.sender_id:
+            from ._transport_auth import sign_request
+            from urllib.parse import urlparse
+            parsed = urlparse(url)
+            path = parsed.path or "/"
+            headers = sign_request(
+                self._signing,
+                spoke_id=self._cfg.sender_id,
+                method="POST",
+                path=path,
+            )
+            for k, v in headers.items():
+                req.add_header(k, v)
+        elif self._cfg.token:
             req.add_header("Authorization", f"Bearer {self._cfg.token}")
         with urllib.request.urlopen(req, timeout=10) as resp:
             resp.read()

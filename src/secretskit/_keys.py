@@ -429,12 +429,16 @@ class RegistryUserProvider(KeyProvider):
         identity: PrivateKeys | None = None,
         *,
         token: str | None = None,
+        signing_key=None,
+        spoke_id: str = "",
         fetcher=None,
         cache_ttl_s: int = 300,
     ):
         self._base = registry_url.rstrip("/")
         self._identity = identity
         self._token = token
+        self._signing_key = signing_key
+        self._spoke_id = spoke_id
         self._fetcher = fetcher
         self._cache_ttl_s = cache_ttl_s
         self._users: dict[str, tuple[float, UserPublicKeys]] = {}
@@ -443,6 +447,7 @@ class RegistryUserProvider(KeyProvider):
         import base64
         import json
         import time
+        import urllib.request
 
         # H8 SSRF guard: never interpolate a caller-controlled id into a
         # registry URL.  Invalid ids fail closed as an unknown user (the
@@ -455,7 +460,24 @@ class RegistryUserProvider(KeyProvider):
         if cached and cached[0] > now:
             return cached[1]
         try:
-            raw = _fetch(f"{self._base}/users/{user_id}", self._token, self._fetcher)
+            url = f"{self._base}/users/{user_id}"
+            if self._signing_key and self._spoke_id:
+                from ._transport_auth import sign_request
+                headers = sign_request(
+                    self._signing_key,
+                    spoke_id=self._spoke_id,
+                    method="GET",
+                    path=f"/users/{user_id}",
+                )
+                req = urllib.request.Request(url)
+                for k, v in headers.items():
+                    req.add_header(k, v)
+                with urllib.request.urlopen(req, timeout=30) as resp:
+                    raw = resp.read()
+            elif self._fetcher:
+                raw = self._fetcher(url, self._token)
+            else:
+                raw = _fetch(url, self._token, None)
         except Exception as exc:
             code = getattr(exc, "code", None)
             if code == 404:

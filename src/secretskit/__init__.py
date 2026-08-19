@@ -27,6 +27,7 @@ from ._keys import (
 from ._hybrid import PeerPublic
 from . import _manifest as manifest
 from . import _signing as signing
+from . import _transport_auth as transport_auth
 from . import log_edge
 
 __version__ = "0.6.0"
@@ -57,6 +58,7 @@ __all__ = [
     "save_identity",
     "save_peer",
     "signing",
+    "transport_auth",
     "unwrap_bytes",
     "valid_user_id",
     "wipe",

@@ -325,6 +325,7 @@ def _fetch(url: str, token: str | None, fetcher) -> bytes:
     import urllib.request
 
     req = urllib.request.Request(url)
+    req.add_header("User-Agent", "analytics-secrets/1.0")
     if token:
         req.add_header("Authorization", f"Bearer {token}")
     with urllib.request.urlopen(req, timeout=30) as resp:
@@ -470,6 +471,7 @@ class RegistryUserProvider(KeyProvider):
                     path=f"/users/{user_id}",
                 )
                 req = urllib.request.Request(url)
+                req.add_header("User-Agent", "analytics-secrets/1.0")
                 for k, v in headers.items():
                     req.add_header(k, v)
                 with urllib.request.urlopen(req, timeout=30) as resp:
@@ -719,7 +721,10 @@ class BootKeyProvider(KeyProvider):
             return
         req = urllib.request.Request(
             url, data=body, method="POST",
-            headers={"Content-Type": "application/json"},
+            headers={
+                "Content-Type": "application/json",
+                "User-Agent": "analytics-secrets/1.0",
+            },
         )
         try:
             with urllib.request.urlopen(req, timeout=30) as resp:

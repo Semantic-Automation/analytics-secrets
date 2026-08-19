@@ -208,6 +208,7 @@ class LogEdgeClient:
 
     def _signed_request(self, url: str) -> urllib.request.Request:
         req = urllib.request.Request(url)
+        req.add_header("User-Agent", "analytics-secrets/1.0")
         if self._signing and self._cfg.sender_id:
             from ._transport_auth import sign_request
             from urllib.parse import urlparse
@@ -261,7 +262,11 @@ class LogEdgeClient:
             self._poster(url, data, self._cfg.token)
             return
         req = urllib.request.Request(
-            url, data=data, method="POST", headers={"Content-Type": "application/json"}
+            url, data=data, method="POST",
+            headers={
+                "Content-Type": "application/json",
+                "User-Agent": "analytics-secrets/1.0",
+            },
         )
         if self._signing and self._cfg.sender_id:
             from ._transport_auth import sign_request

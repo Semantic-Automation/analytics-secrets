@@ -775,3 +775,4 @@ class BootKeyProvider(KeyProvider):
         self._pem = None
         self._identity = None
         self._signing = None
+        self._tokens = {}

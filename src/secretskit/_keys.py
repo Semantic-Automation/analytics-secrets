@@ -577,6 +577,7 @@ class BootKeyProvider(KeyProvider):
         self._identity: PrivateKeys | None = None
         self._signing = None
         self._pem: bytearray | None = None
+        self._tokens: dict[str, str] = {}
 
     def _load(self) -> None:
         import base64
@@ -609,6 +610,7 @@ class BootKeyProvider(KeyProvider):
             self._signing = _manifest.load_signing_key(
                 base64.b64decode(material["sign_pem"])
             )
+            self._tokens = material.get("tokens", {})
         except (KeyError, ValueError, TypeError, UnicodeDecodeError, DecryptError) as exc:
             raise ConfigurationError("hub returned invalid identity material") from exc
         try:
@@ -748,6 +750,11 @@ class BootKeyProvider(KeyProvider):
         """The spoke's ML-DSA-65 signing key (for request/record signatures)."""
         self._load()
         return self._signing
+
+    def spoke_tokens(self) -> dict[str, str]:
+        """Tokens included in the identity release envelope (e.g. registry read, logsink)."""
+        self._load()
+        return dict(self._tokens)
 
     def signing_public(self, user_id: str) -> mldsa.MLDSA65PublicKey:
         """Delegate user signature verification to the peers provider."""

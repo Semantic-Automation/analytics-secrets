@@ -248,7 +248,7 @@ def test_from_env(tmp_path):
     _, _, sign_pem, _, _ = _fixtures(tmp_path)
     os_environ = {
         "LOG_EDGE_URL": "http://logsink:8086",
-        "LOG_EDGE_TOKEN": "tok",
+        "LOGSINK_ACCESS_TOKEN": "tok",
         "LOG_EDGE_SENDER_ID": "server-1",
         "LOG_EDGE_SIGNING_KEY": str(sign_pem),
     }

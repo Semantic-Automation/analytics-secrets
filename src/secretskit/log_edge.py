@@ -40,7 +40,7 @@ from ._api import Encryptor
 
 _ENV = {
     "url": "LOG_EDGE_URL",
-    "token": "LOG_EDGE_TOKEN",
+    "token": "LOGSINK_ACCESS_TOKEN",
     "sender_id": "LOG_EDGE_SENDER_ID",
     "signing_key": "LOG_EDGE_SIGNING_KEY",
     "logger_id": "LOG_EDGE_LOGGER_ID",

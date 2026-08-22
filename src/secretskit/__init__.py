@@ -30,7 +30,7 @@ from . import _signing as signing
 from . import _transport_auth as transport_auth
 from . import log_edge
 
-__version__ = "0.6.0"
+__version__ = "0.7.1"
 
 __all__ = [
     "BootKeyProvider",

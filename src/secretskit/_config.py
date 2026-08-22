@@ -11,6 +11,9 @@ Dev and prod differ only in *where keys live*, never in the public API.
 * ``SECRETS_REGISTRY_URL``, ``SECRETS_REGISTRY_PUB``, ``SECRETS_REGISTRY_TOKEN``,
   ``SECRETS_REGISTRY_MAX_AGE``   (registry provider; ``SECRETS_REGISTRY_PUB`` is
   a PEM, a file path, or base64 PEM of the ML-DSA-65 anchor)
+* ``SECRETS_REGISTRY_SIGNING_KEY``, ``SECRETS_REGISTRY_USER_ID``  (optional;
+  when set the manifest fetch is authenticated with ML-DSA-65 transport
+  signatures instead of a bearer token)
 
 Moving to prod therefore means setting different environment variables —
 application/server code does not change.
@@ -42,6 +45,8 @@ class SecretsConfig:
     registry_url: str | None = None
     registry_pub: str | None = None
     registry_token: str | None = None
+    registry_signing_key: str | None = None
+    registry_user_id: str | None = None
     registry_max_age_s: int = 10800
 
     @classmethod
@@ -65,6 +70,8 @@ class SecretsConfig:
             registry_url=e.get("SECRETS_REGISTRY_URL"),
             registry_pub=e.get("SECRETS_REGISTRY_PUB"),
             registry_token=e.get("SECRETS_REGISTRY_TOKEN"),
+            registry_signing_key=e.get("SECRETS_REGISTRY_SIGNING_KEY"),
+            registry_user_id=e.get("SECRETS_REGISTRY_USER_ID"),
             registry_max_age_s=int(e.get("SECRETS_REGISTRY_MAX_AGE", "10800")),
         )
 
@@ -102,6 +109,29 @@ class SecretsConfig:
                 ) from exc
         return load_verification_key(data)
 
+    def _load_registry_signing_key(self):
+        """Load the optional ML-DSA-65 signing key (path or PEM) used for
+        transport-auth on the manifest fetch."""
+        from pathlib import Path
+
+        from ._manifest import load_signing_key
+
+        value = self.registry_signing_key or ""
+        if not value:
+            return None
+        if value.startswith("-----BEGIN"):
+            data = value.encode("utf-8")
+        elif Path(value).is_file():
+            data = Path(value).read_bytes()
+        else:
+            try:
+                data = base64.b64decode(value, validate=True)
+            except Exception as exc:
+                raise ConfigurationError(
+                    "SECRETS_REGISTRY_SIGNING_KEY must be a PEM, a file path, or base64 PEM"
+                ) from exc
+        return load_signing_key(data)
+
     def build_provider(self) -> KeyProvider:
         """Instantiate the configured :class:`KeyProvider`."""
         if self.provider == FILE_PROVIDER:
@@ -133,6 +163,8 @@ class SecretsConfig:
                 self._load_registry_verify_key(),
                 identity=self.build_identity(),
                 token=self.registry_token,
+                signing_key=self._load_registry_signing_key(),
+                user_id=self.registry_user_id or self.identity or "",
                 max_age_s=self.registry_max_age_s,
             )
         raise ConfigurationError(f"unknown SECRETS_PROVIDER {self.provider!r}")

@@ -352,6 +352,8 @@ class RegistryKeyProvider(KeyProvider):
         identity: PrivateKeys | None = None,
         *,
         token: str | None = None,
+        signing_key=None,
+        user_id: str = "",
         fetcher=None,
         max_age_s: int = 10800,
         skew_s: int = 60,
@@ -360,14 +362,33 @@ class RegistryKeyProvider(KeyProvider):
         self._verify_key = verify_key
         self._identity = identity
         self._token = token
+        self._signing_key = signing_key
+        self._user_id = user_id
         self._max_age_s = max_age_s
         self._skew_s = skew_s
         self._peers = self._load_manifest(fetcher)
 
     def _load_manifest(self, fetcher) -> dict[str, PeerPublic]:
         import base64
+        import urllib.request
 
-        payload = _fetch(self._url, self._token, fetcher)
+        if self._signing_key and self._user_id:
+            from ._transport_auth import sign_request
+
+            headers = sign_request(
+                self._signing_key,
+                spoke_id=self._user_id,
+                method="GET",
+                path="/keys/manifest",
+            )
+            req = urllib.request.Request(self._url)
+            req.add_header("User-Agent", "analytics-secrets/1.0")
+            for k, v in headers.items():
+                req.add_header(k, v)
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                payload = resp.read()
+        else:
+            payload = _fetch(self._url, self._token, fetcher)
         doc = _manifest.verify(
             payload, self._verify_key, max_age_s=self._max_age_s, skew_s=self._skew_s
         )

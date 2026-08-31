@@ -367,6 +367,7 @@ class RegistryKeyProvider(KeyProvider):
         self._max_age_s = max_age_s
         self._skew_s = skew_s
         self._roles: dict[str, str] = {}
+        self._signing_public: dict[str, "mldsa.MLDSA65PublicKey"] = {}
         self._peers = self._load_manifest(fetcher)
 
     def _load_manifest(self, fetcher) -> dict[str, PeerPublic]:
@@ -405,6 +406,13 @@ class RegistryKeyProvider(KeyProvider):
             if role not in ("llm", "builder"):
                 role = "llm"
             self._roles[peer_id] = role
+            if material.get("signing_pub"):
+                try:
+                    self._signing_public[peer_id] = _load_mldsa_public(
+                        base64.b64decode(material["signing_pub"], validate=True)
+                    )
+                except Exception:  # noqa: BLE001 - bad key -> no signature verification
+                    pass
         return peers
 
     def identity_keys(self) -> PrivateKeys:
@@ -432,6 +440,18 @@ class RegistryKeyProvider(KeyProvider):
         filter ``peer_ids()`` against this map.
         """
         return dict(self._roles)
+
+    def signing_public(self, peer_id: str) -> "mldsa.MLDSA65PublicKey":
+        """A peer's ML-DSA-65 signing public key from the manifest.
+
+        Used to verify a peer's signature on the response envelope (the client
+        verifies the builder that signed its response). Raises
+        :class:`UnknownPeerError` when absent.
+        """
+        try:
+            return self._signing_public[peer_id]
+        except KeyError as exc:
+            raise UnknownPeerError(f"no signing key for peer {peer_id!r}") from exc
 
 
 @dataclass(frozen=True)

@@ -139,6 +139,50 @@ def test_peer_roles(manifest_env):
     assert [p for p in prov.peer_ids() if prov.peer_roles()[p] == "builder"] == ["builder-1"]
 
 
+def test_signing_public_from_manifest(manifest_env):
+    """A peer's signing key is exposed for response-signature verification."""
+    from secretskit._manifest import load_signing_key
+
+    hub = _hub_identity()
+    signing = manifest_env["signing"]
+    spoke = _identity("spoke-1")
+    spoke_sign = _manifest_signing_key("spoke-1")
+    doc = _make_manifest(signing, ["spoke-1", "builder-1"])
+    # inject signing_pub for both entities (resign_all emits it when a sign.pem exists)
+    doc["entities"]["spoke-1"]["signing_pub"] = _b64_pem(spoke_sign.public_key())
+    doc["entities"]["builder-1"]["signing_pub"] = _b64_pem(spoke_sign.public_key())
+    # re-sign after editing the entities
+    from secretskit._manifest import canonical, serialize as _ser
+
+    doc.pop("signature")
+    sig = signing.sign(canonical(doc))
+    doc["signature"] = base64.b64encode(sig).decode("ascii")
+    prov = RegistryKeyProvider(
+        "http://registry.test/keys/manifest",
+        load_anchor(manifest_env["anchor"]),
+        identity=hub,
+        fetcher=_fetcher(_ser(doc)),
+    )
+    pub = prov.signing_public("builder-1")
+    from cryptography.hazmat.primitives import serialization as s
+
+    loaded = s.load_pem_public_key(pub.public_bytes(s.Encoding.PEM, s.PublicFormat.SubjectPublicKeyInfo))
+    assert loaded == spoke_sign.public_key()
+    with pytest.raises(UnknownPeerError):
+        prov.signing_public("ghost")
+
+
+def _manifest_signing_key(name):
+    from secretskit._manifest import load_signing_key
+
+    if name not in _manifest_signkeys:
+        _manifest_signkeys[name] = generate_signing_key()
+    return _manifest_signkeys[name]
+
+
+_manifest_signkeys: dict = {}
+
+
 def test_peer_roles_rejects_unknown_tag(manifest_env):
     """An unknown/self-declared role tag is coerced to llm (trusted source)."""
     hub = _hub_identity()

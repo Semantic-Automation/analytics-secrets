@@ -366,6 +366,7 @@ class RegistryKeyProvider(KeyProvider):
         self._user_id = user_id
         self._max_age_s = max_age_s
         self._skew_s = skew_s
+        self._roles: dict[str, str] = {}
         self._peers = self._load_manifest(fetcher)
 
     def _load_manifest(self, fetcher) -> dict[str, PeerPublic]:
@@ -399,6 +400,11 @@ class RegistryKeyProvider(KeyProvider):
                 kem=_load_kem_public(base64.b64decode(material["kem_pub"])),
                 x=_load_x_public(base64.b64decode(material["x_pub"])),
             )
+            # Role tag (build-node refactor §3.10): absent/unknown -> "llm".
+            role = str(material.get("role") or "llm").strip().lower()
+            if role not in ("llm", "builder"):
+                role = "llm"
+            self._roles[peer_id] = role
         return peers
 
     def identity_keys(self) -> PrivateKeys:
@@ -416,6 +422,16 @@ class RegistryKeyProvider(KeyProvider):
 
     def peer_ids(self) -> list[str]:
         return sorted(self._peers)
+
+    def peer_roles(self) -> dict[str, str]:
+        """Map each manifest peer id to its role tag (``"llm"`` | ``"builder"``).
+
+        Roles come from the signed manifest (the trusted role source); peers
+        with an absent/unknown role default to ``"llm"``. Callers that must
+        fan out to a specific role (e.g. a client encrypting to builders)
+        filter ``peer_ids()`` against this map.
+        """
+        return dict(self._roles)
 
 
 @dataclass(frozen=True)

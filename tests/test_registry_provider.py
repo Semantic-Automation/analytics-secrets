@@ -34,15 +34,18 @@ def _b64_pem(key, public=True):
     ).decode()
 
 
-def _make_manifest(signing_key, spokes, *, ttl_h=1):
+def _make_manifest(signing_key, spokes, *, ttl_h=1, roles=None):
     now = datetime.now(timezone.utc)
     entities = {}
     for sid in spokes:
         s = _identity(sid)
-        entities[sid] = {
+        entity = {
             "kem_pub": _b64_pem(s.kem.public_key()),
             "x_pub": _b64_pem(s.x.public_key()),
         }
+        if roles and sid in roles:
+            entity["role"] = roles[sid]
+        entities[sid] = entity
     return sign(
         entities,
         issued_at=now.strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -116,6 +119,41 @@ def test_provider_roundtrip(manifest_env):
     ))
     blob = enc.encrypt({"prompt": "hello"}, to="spoke-1")
     assert dec.decrypt(blob) == {"prompt": "hello"}
+
+
+def test_peer_roles(manifest_env):
+    """Roles come from the signed manifest; absent role defaults to llm."""
+    hub = _hub_identity()
+    doc = _make_manifest(
+        manifest_env["signing"],
+        ["spoke-1", "spoke-2", "builder-1"],
+        roles={"spoke-1": "llm", "builder-1": "builder"},
+    )
+    prov = RegistryKeyProvider(
+        "http://registry.test/keys/manifest",
+        load_anchor(manifest_env["anchor"]),
+        identity=hub,
+        fetcher=_fetcher(serialize(doc)),
+    )
+    assert prov.peer_roles() == {"spoke-1": "llm", "spoke-2": "llm", "builder-1": "builder"}
+    assert [p for p in prov.peer_ids() if prov.peer_roles()[p] == "builder"] == ["builder-1"]
+
+
+def test_peer_roles_rejects_unknown_tag(manifest_env):
+    """An unknown/self-declared role tag is coerced to llm (trusted source)."""
+    hub = _hub_identity()
+    doc = _make_manifest(
+        manifest_env["signing"],
+        ["spoke-1"],
+        roles={"spoke-1": "sudo"},
+    )
+    prov = RegistryKeyProvider(
+        "http://registry.test/keys/manifest",
+        load_anchor(manifest_env["anchor"]),
+        identity=hub,
+        fetcher=_fetcher(serialize(doc)),
+    )
+    assert prov.peer_roles() == {"spoke-1": "llm"}
 
 
 def test_unknown_peer(manifest_env):

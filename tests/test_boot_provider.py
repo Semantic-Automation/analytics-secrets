@@ -177,6 +177,7 @@ def _envelope_payload(spoke, spoke_signing, enroll_ident):
         "kem_pem": _priv_b64(spoke.kem),
         "x_pem": _priv_b64(spoke.x),
         "sign_pem": _priv_b64(spoke_signing),
+        "registry_anchor": "-----BEGIN PUBLIC KEY-----\nAAAA\n-----END PUBLIC KEY-----\n",
     }).encode()
     peer = PeerPublic(
         id="spoke-1",
@@ -234,6 +235,9 @@ def test_boot_waits_for_approval_then_unwraps(tmp_path):
     ident = provider.identity_keys()
     assert ident.id == "spoke-1"
     assert provider.signing_key() is not None
+    # the hub-released registry anchor rides in the same envelope (builder uses
+    # it to verify the signed manifest — no manual anchor mount)
+    assert provider.registry_anchor() == "-----BEGIN PUBLIC KEY-----\nAAAA\n-----END PUBLIC KEY-----\n"
     # no bearer token was used and the release unwrapped with the enroll key
 
 

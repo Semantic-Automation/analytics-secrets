@@ -643,6 +643,7 @@ class BootKeyProvider(KeyProvider):
         self._signing = None
         self._pem: bytearray | None = None
         self._tokens: dict[str, str] = {}
+        self._registry_anchor: str = ""
 
     def _load(self) -> None:
         import base64
@@ -676,6 +677,10 @@ class BootKeyProvider(KeyProvider):
                 base64.b64decode(material["sign_pem"])
             )
             self._tokens = material.get("tokens", {})
+            # build-node refactor: the hub releases the registry anchor with the
+            # identity so the builder can verify the signed manifest (role=llm
+            # spoke discovery) — no manual anchor mount. Absent on older hubs.
+            self._registry_anchor = material.get("registry_anchor", "") or ""
         except (KeyError, ValueError, TypeError, UnicodeDecodeError, DecryptError) as exc:
             raise ConfigurationError("hub returned invalid identity material") from exc
         try:
@@ -821,6 +826,16 @@ class BootKeyProvider(KeyProvider):
         """Tokens included in the identity release envelope (e.g. registry read, logsink)."""
         self._load()
         return dict(self._tokens)
+
+    def registry_anchor(self) -> str:
+        """The hub's ML-DSA-65 registry anchor (PEM) released with the identity.
+
+        Used to verify the signed manifest (role=llm spoke discovery on the
+        builder).  Empty when the hub didn't provide it (older keyhub) — the
+        caller should fall back to a locally provisioned anchor.
+        """
+        self._load()
+        return self._registry_anchor
 
     def signing_public(self, user_id: str) -> mldsa.MLDSA65PublicKey:
         """Delegate user signature verification to the peers provider."""

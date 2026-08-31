@@ -284,6 +284,69 @@ def test_boot_submits_pending_when_none_then_waits(tmp_path):
     assert payload["kem_pub"] and payload["x_pub"]
 
 
+def test_boot_enrollment_carries_role(tmp_path):
+    """build-node refactor §3.10: the enrollment declares the requested role
+    tag (llm default / builder), stored on the keyhub record for the approver
+    to confirm. The signed manifest is still the trusted role source."""
+    import io
+
+    import urllib.error
+
+    calls = {"n": 0}
+    spoke = generate_identity("spoke-1")
+    spoke_signing = generate_signing_key()
+    enroll = generate_identity("spoke-1")
+    user = _SimpleUser(generate_identity("user-1"), generate_signing_key())
+    peers = RegistryUserProvider("http://reg:8085", token="reg-tok",
+                                 fetcher=_FakeRegistry(user))
+
+    enroll_dir = tmp_path / "enroll"
+    save_identity(enroll, enroll_dir)
+
+    def make_hub():
+        calls = {"n": 0}
+
+        def hub(url, token):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise _err(403, "no enrollment request for 'spoke-1'; submit one via POST /keys/enrollments")
+            if calls["n"] == 2:
+                raise _err(403, "enrollment xyz pending approval")
+            return json.dumps({
+                "id": "spoke-1",
+                "envelope": base64.b64encode(_envelope_payload(spoke, spoke_signing, enroll)).decode(),
+            }).encode()
+
+        return hub
+
+    # default role is llm
+    submitted = []
+    BootKeyProvider(
+        "http://keyhub:8087", "", "spoke-1",
+        peers=peers, fetcher=make_hub(), enroll_keydir=str(enroll_dir),
+        label="gpu-nyc-01", backoff_s=0.0, submitter=lambda u, b: submitted.append((u, b)),
+    ).identity_keys()
+    assert json.loads(submitted[0][1])["role"] == "llm"
+
+    # a builder declares its role at enrollment
+    submitted.clear()
+    BootKeyProvider(
+        "http://keyhub:8087", "", "spoke-1",
+        peers=peers, fetcher=make_hub(), enroll_keydir=str(enroll_dir),
+        label="builder-1", backoff_s=0.0, submitter=lambda u, b: submitted.append((u, b)),
+        enroll_role="builder",
+    ).identity_keys()
+    assert json.loads(submitted[0][1])["role"] == "builder"
+
+    # invalid roles are refused at construction
+    with pytest.raises(Exception):
+        BootKeyProvider(
+            "http://keyhub:8087", "", "spoke-1",
+            peers=peers, fetcher=make_hub(), enroll_keydir=str(enroll_dir),
+            backoff_s=0.0, enroll_role="admin",
+        )
+
+
 def test_boot_rejected_fails_fast(tmp_path):
     import pytest as _pytest
 

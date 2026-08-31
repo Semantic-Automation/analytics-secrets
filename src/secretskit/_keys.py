@@ -619,6 +619,7 @@ class BootKeyProvider(KeyProvider):
         approve_url: str = "",
         backoff_s: float = 10.0,
         submitter=None,
+        enroll_role: str = "llm",
     ):
         self._url = identity_url.rstrip("/")
         self._token = identity_token
@@ -631,6 +632,13 @@ class BootKeyProvider(KeyProvider):
         self._approve_url = approve_url
         self._backoff_s = backoff_s
         self._submitter = submitter
+        # build-node refactor §3.10: the requested role tag (llm|builder) is
+        # declared at enrollment and stored on the keyhub record. Approval
+        # confirms it; the signed manifest is the TRUSTED role source.
+        role = str(enroll_role or "llm").strip().lower()
+        if role not in ("llm", "builder"):
+            raise ConfigurationError(f"invalid enroll_role {role!r} (llm|builder)")
+        self._enroll_role = role
         self._identity: PrivateKeys | None = None
         self._signing = None
         self._pem: bytearray | None = None
@@ -770,6 +778,7 @@ class BootKeyProvider(KeyProvider):
             "id": self._identity_id,
             "label": self._label,
             "hostname": self._hostname,
+            "role": self._enroll_role,
             "kem_pub": _b64_pub(enroll.kem.public_key()),
             "x_pub": _b64_pub(enroll.x.public_key()),
         }).encode("utf-8")

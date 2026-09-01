@@ -743,6 +743,24 @@ class BootKeyProvider(KeyProvider):
                     self._wait_for_approval(attempts)
                     attempts += 1
                     continue
+                if exc.code == 429 or exc.code >= 500:
+                    # Transient (rate limit / upstream blip): back off and
+                    # retry. A spoke boot MUST self-heal — treating a 429 as
+                    # fatal crashes the container, and the crash-loop re-fetches
+                    # immediately, saturating keyhub's rate window and turning a
+                    # temporary limit into a persistent outage.
+                    import time as _time
+
+                    delay = min(self._backoff_s * (2 ** min(attempts // 3, 3)), 60.0)
+                    print(
+                        f"[spoke] keyhub transient error ({exc.code}) fetching "
+                        f"identity for {self._identity_id!r} — retrying in "
+                        f"{delay:.0f}s",
+                        flush=True,
+                    )
+                    _time.sleep(delay)
+                    attempts += 1
+                    continue
                 raise ConfigurationError(
                     f"hub error fetching identity for {self._identity_id} "
                     f"({exc.code}): {detail}"

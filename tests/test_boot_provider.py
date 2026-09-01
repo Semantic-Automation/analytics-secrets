@@ -370,6 +370,65 @@ def test_boot_rejected_fails_fast(tmp_path):
         provider.identity_keys()
 
 
+def test_boot_retries_rate_limit(tmp_path):
+    """A transient 429 (keyhub rate limit) must be retried, not fatal. The
+    previous fatal-on-429 made a spoke boot crash-loop and saturate keyhub's
+    rate window, turning a temporary limit into a persistent outage."""
+    calls = {"n": 0}
+    spoke = generate_identity("spoke-1")
+    spoke_signing = generate_signing_key()
+    user = _SimpleUser(generate_identity("user-1"), generate_signing_key())
+    peers = RegistryUserProvider("http://reg:8085", token="reg-tok",
+                                 fetcher=_FakeRegistry(user))
+
+    def hub(url, token):
+        calls["n"] += 1
+        if calls["n"] <= 3:
+            raise _err(429, "too many requests")
+        return json.dumps({
+            "id": "spoke-1",
+            "kem_pem": _b64_pem(spoke.kem),
+            "x_pem": _b64_pem(spoke.x),
+            "sign_pem": _b64_pem(spoke_signing),
+        }).encode()
+
+    provider = BootKeyProvider(
+        "http://keyhub:8087", "hub-tok", "spoke-1",
+        peers=peers, fetcher=hub, backoff_s=0.0,
+    )
+    ident = provider.identity_keys()
+    assert ident.id == "spoke-1"
+    assert calls["n"] == 4  # 3x 429 (transient, retried) then success
+
+
+def test_boot_retries_upstream_5xx(tmp_path):
+    """A transient 5xx is retried too (keyhub restarting)."""
+    calls = {"n": 0}
+    spoke = generate_identity("spoke-1")
+    spoke_signing = generate_signing_key()
+    user = _SimpleUser(generate_identity("user-1"), generate_signing_key())
+    peers = RegistryUserProvider("http://reg:8085", token="reg-tok",
+                                 fetcher=_FakeRegistry(user))
+
+    def hub(url, token):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise _err(503, "service unavailable")
+        return json.dumps({
+            "id": "spoke-1",
+            "kem_pem": _b64_pem(spoke.kem),
+            "x_pem": _b64_pem(spoke.x),
+            "sign_pem": _b64_pem(spoke_signing),
+        }).encode()
+
+    provider = BootKeyProvider(
+        "http://keyhub:8087", "hub-tok", "spoke-1",
+        peers=peers, fetcher=hub, backoff_s=0.0,
+    )
+    assert provider.identity_keys().id == "spoke-1"
+    assert calls["n"] == 2
+
+
 def test_boot_no_enroll_keydir_errors(tmp_path):
     user = _SimpleUser(generate_identity("user-1"), generate_signing_key())
     peers = RegistryUserProvider("http://reg:8085", token="reg-tok",

@@ -52,6 +52,11 @@ class PeerPublic:
     id: str
     kem: mlkem.MLKEM768PublicKey
     x: x25519.X25519PublicKey
+    # build-node mesh (§3.11 FLIPPED): the peer's public acceptor hostname
+    # (e.g. "spoke-3.semanticautomation.in") so a builder knows where to dial a
+    # role=llm spoke's cloudflared-fronted WS acceptor. Empty when the manifest
+    # doesn't carry it.
+    hostname: str = ""
 
 
 @dataclass(frozen=True)

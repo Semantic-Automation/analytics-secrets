@@ -400,6 +400,7 @@ class RegistryKeyProvider(KeyProvider):
                 id=peer_id,
                 kem=_load_kem_public(base64.b64decode(material["kem_pub"])),
                 x=_load_x_public(base64.b64decode(material["x_pub"])),
+                hostname=str(material.get("hostname") or "").strip(),
             )
             # Role tag (build-node refactor §3.10): absent/unknown -> "llm".
             role = str(material.get("role") or "llm").strip().lower()
@@ -452,6 +453,15 @@ class RegistryKeyProvider(KeyProvider):
             return self._signing_public[peer_id]
         except KeyError as exc:
             raise UnknownPeerError(f"no signing key for peer {peer_id!r}") from exc
+
+    def peer_hostname(self, peer_id: str) -> str:
+        """A peer's public acceptor hostname from the manifest (mesh §3.11).
+
+        The builder dials ``wss://{hostname}/tunnel/connect`` to reach a
+        ``role=llm`` spoke's cloudflared-fronted acceptor. Empty when the
+        manifest doesn't carry one (e.g. legacy entities).
+        """
+        return self.peer_public(peer_id).hostname
 
 
 @dataclass(frozen=True)
@@ -644,6 +654,7 @@ class BootKeyProvider(KeyProvider):
         self._pem: bytearray | None = None
         self._tokens: dict[str, str] = {}
         self._registry_anchor: str = ""
+        self._cloudflared: dict[str, str] = {}
 
     def _load(self) -> None:
         import base64
@@ -681,6 +692,12 @@ class BootKeyProvider(KeyProvider):
             # identity so the builder can verify the signed manifest (role=llm
             # spoke discovery) — no manual anchor mount. Absent on older hubs.
             self._registry_anchor = material.get("registry_anchor", "") or ""
+            # build-node mesh (§3.11 FLIPPED): the spoke's indexed cloudflared
+            # tunnel ({token, hostname}) released at enrollment — the spoke
+            # fronts its mesh acceptor with it, RAM-only. Absent when the pool
+            # is exhausted / the hub doesn't provide one.
+            cfd = material.get("cloudflared") or {}
+            self._cloudflared = {str(k): str(v) for k, v in cfd.items() if v}
         except (KeyError, ValueError, TypeError, UnicodeDecodeError, DecryptError) as exc:
             raise ConfigurationError("hub returned invalid identity material") from exc
         try:
@@ -836,6 +853,16 @@ class BootKeyProvider(KeyProvider):
         """
         self._load()
         return self._registry_anchor
+
+    def cloudflared(self) -> dict[str, str]:
+        """The indexed cloudflared tunnel released with the identity (§3.11).
+
+        ``{"token": ..., "hostname": ...}`` — the spoke fronts its mesh acceptor
+        with the token (RAM-only); the hostname is what builders dial (it also
+        rides in the signed manifest).  Empty when unassigned.
+        """
+        self._load()
+        return dict(self._cloudflared)
 
     def signing_public(self, user_id: str) -> mldsa.MLDSA65PublicKey:
         """Delegate user signature verification to the peers provider."""

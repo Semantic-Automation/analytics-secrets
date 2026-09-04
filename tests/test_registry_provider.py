@@ -139,6 +139,102 @@ def test_peer_roles(manifest_env):
     assert [p for p in prov.peer_ids() if prov.peer_roles()[p] == "builder"] == ["builder-1"]
 
 
+def test_manifest_version_exposed(manifest_env):
+    """Stage C: the provider exposes the manifest's monotonic version."""
+    from secretskit._manifest import sign as _sign
+
+    hub = _hub_identity()
+    spoke = _identity("spoke-1")
+    now = datetime.now(timezone.utc)
+    doc = _sign(
+        {"spoke-1": {"kem_pub": _b64_pem(spoke.kem.public_key()),
+                     "x_pub": _b64_pem(spoke.x.public_key())}},
+        issued_at=now.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        expires_at=(now + timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        signing_key=manifest_env["signing"],
+        version=42,
+    )
+    prov = RegistryKeyProvider(
+        "http://registry.test/keys/manifest",
+        load_anchor(manifest_env["anchor"]),
+        identity=hub,
+        fetcher=_fetcher(serialize(doc)),
+    )
+    assert prov.version == 42
+
+    # A manifest without a version field (crafted + re-signed) returns None.
+    from secretskit._manifest import canonical
+    nover = _make_manifest(manifest_env["signing"], ["spoke-1"])
+    nover.pop("version")
+    nover.pop("signature")
+    nover["signature"] = base64.b64encode(
+        manifest_env["signing"].sign(canonical(nover))
+    ).decode("ascii")
+    prov2 = RegistryKeyProvider(
+        "http://registry.test/keys/manifest",
+        load_anchor(manifest_env["anchor"]),
+        identity=hub,
+        fetcher=_fetcher(serialize(nover)),
+    )
+    assert prov2.version is None
+
+
+
+def test_builder_manifest_url_signed_path(manifest_env):
+    """Stage C: a provider fetching ``/keys/builder-manifest`` signs THAT path,
+    not the hardcoded legacy ``/keys/manifest`` — so the proxy's path-scoped
+    transport-auth accepts it."""
+    import secretskit._transport_auth as ta
+    from cryptography.hazmat.primitives.asymmetric import mldsa
+
+    signing = mldsa.MLDSA65PrivateKey.generate()
+
+    recorded = {}
+
+    class _Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            if self.path != "/keys/builder-manifest":
+                self.send_error(404)
+                return
+            # The request's transport-auth signature must verify against the
+            # client's registered signing key for path /keys/builder-manifest.
+            ta.verify_request(
+                dict(self.headers),
+                verify_key=signing.public_key(),
+                method="GET",
+                path="/keys/builder-manifest",
+            )
+            recorded["verified"] = True
+            body = manifest_env["manifest_bytes"]
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *args):
+            pass
+
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
+    import threading
+
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    url = f"http://127.0.0.1:{server.server_address[1]}/keys/builder-manifest"
+    try:
+        prov = RegistryKeyProvider(
+            url,
+            load_anchor(manifest_env["anchor"]),
+            identity=_hub_identity(),
+            signing_key=signing,
+            user_id="client-1",
+        )
+        assert prov.peer_ids() == ["spoke-1", "spoke-2"]
+        assert recorded.get("verified") is True
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
 def test_signing_public_from_manifest(manifest_env):
     """A peer's signing key is exposed for response-signature verification."""
     from secretskit._manifest import load_signing_key

@@ -368,6 +368,7 @@ class RegistryKeyProvider(KeyProvider):
         self._skew_s = skew_s
         self._roles: dict[str, str] = {}
         self._signing_public: dict[str, "mldsa.MLDSA65PublicKey"] = {}
+        self._manifest_version: int | None = None
         self._peers = self._load_manifest(fetcher)
 
     def _load_manifest(self, fetcher) -> dict[str, PeerPublic]:
@@ -375,13 +376,20 @@ class RegistryKeyProvider(KeyProvider):
         import urllib.request
 
         if self._signing_key and self._user_id:
+            from urllib.parse import urlsplit
+
             from ._transport_auth import sign_request
 
+            # Sign the actual request path (e.g. ``/keys/builder-manifest``), so
+            # the transport-auth signature matches what the server verifies
+            # against ``request.url.path`` (dual-manifest §2: the client fetches
+            # the builder manifest, not the legacy combined one).
+            path = urlsplit(self._url).path or "/"
             headers = sign_request(
                 self._signing_key,
                 spoke_id=self._user_id,
                 method="GET",
-                path="/keys/manifest",
+                path=path,
             )
             req = urllib.request.Request(self._url)
             req.add_header("User-Agent", "analytics-secrets/1.0")
@@ -394,6 +402,12 @@ class RegistryKeyProvider(KeyProvider):
         doc = _manifest.verify(
             payload, self._verify_key, max_age_s=self._max_age_s, skew_s=self._skew_s
         )
+        # Stage C (dual-manifest): expose the manifest's monotonic version so a
+        # client can echo it in ``X-Manifest-Version`` for staleness detection.
+        # TO ALIGN WITH STAGE A: the version field name lives here (and in the
+        # proxy's `_current_manifest_version`). Currently the top-level
+        # ``version`` key; adjust both to the field Stage A chooses.
+        self._manifest_version = doc.get("version")
         peers: dict[str, PeerPublic] = {}
         for peer_id, material in doc["entities"].items():
             peers[peer_id] = PeerPublic(
@@ -462,6 +476,18 @@ class RegistryKeyProvider(KeyProvider):
         manifest doesn't carry one (e.g. legacy entities).
         """
         return self.peer_public(peer_id).hostname
+
+    @property
+    def version(self) -> int | None:
+        """The manifest's monotonic version (dual-manifest §6), or None.
+
+        The hub bumps this on every re-sign; a client echoes it in
+        ``X-Manifest-Version`` so the proxy can detect a stale client and the
+        client can self-heal. None when the fetched manifest carries no version
+        (legacy/unsigned-for-version manifests).
+        """
+        return self._manifest_version
+
 
 
 @dataclass(frozen=True)

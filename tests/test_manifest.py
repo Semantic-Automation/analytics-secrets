@@ -121,3 +121,25 @@ def test_canonical_stable():
     b = json.loads(_manifest.canonical(a).decode())
     assert _manifest.canonical(a) == _manifest.canonical(b)
     assert _manifest.canonical(a) == _manifest.canonical(json.loads(json.dumps(a, sort_keys=True)))
+
+
+def test_version_is_signed_and_readable():
+    key = _manifest.generate_signing_key()
+    m = _manifest.sign(
+        _entities(), issued_at=_make(key)["issued_at"],
+        expires_at=_make(key)["expires_at"], signing_key=key, version=7,
+    )
+    doc = _manifest.verify(_manifest.serialize(m), key.public_key())
+    # The monotonic version rides inside the signed payload.
+    assert doc["version"] == 7
+
+
+def test_version_tamper_rejected():
+    key = _manifest.generate_signing_key()
+    m = _manifest.sign(
+        _entities(), issued_at=_make(key)["issued_at"],
+        expires_at=_make(key)["expires_at"], signing_key=key, version=7,
+    )
+    m["version"] = 8  # forged bump — must break the signature
+    with pytest.raises(ConfigurationError):
+        _manifest.verify(_manifest.serialize(m), key.public_key())

@@ -90,6 +90,14 @@ def sign(
 
     ``entities`` maps an entity id (e.g. ``"spoke-1"``) to a dict holding
     ``kem_pub``/``x_pub`` (and optional ``role``).
+
+    ``version`` is the **monotonic sequence number** (dual-manifest
+    distribution §6), bumped by the hub on every re-sign and embedded inside
+    the signed payload. It lets consumers detect staleness without trusting the
+    delivery path: trust comes from the hub signature, and ``version``
+    distinguishes *fresh* (same signature, newer number) from *stale*. Defaults
+    to ``VERSION`` (1) for legacy single-manifest signers that don't track
+    versions.
     """
     doc = {
         "version": version,

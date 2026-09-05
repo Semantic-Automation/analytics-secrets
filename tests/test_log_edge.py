@@ -6,6 +6,8 @@ import json
 import threading
 import time
 
+import pytest
+
 from cryptography.hazmat.primitives import serialization
 
 from secretskit import FileKeyProvider, Decryptor, generate_identity, save_identity
@@ -34,7 +36,11 @@ class _LogEdgeServer:
             protocol_version = "HTTP/1.1"
 
             def _check_auth(self):
-                return self.headers.get("Authorization") == "Bearer t"
+                # Accept the static bearer token OR ML-DSA transport auth
+                # (X-Spoke-ID present) — mirrors the LogSink's dual auth.
+                if self.headers.get("Authorization") == "Bearer t":
+                    return True
+                return bool(self.headers.get("X-Spoke-ID"))
 
             def do_GET(self):
                 if self.path != "/keys":
@@ -118,7 +124,9 @@ def test_prompt_record_roundtrip(tmp_path):
         assert len(srv.posts) == 1
         path, auth, body = srv.posts[0]
         assert path == "/log"
-        assert auth == "Bearer t"
+        # A sender with a signing key authenticates via ML-DSA transport auth,
+        # not the static bearer token (transport-auth feature).
+        assert auth is None
         req = json.loads(body)
         assert req["kind"] == "prompt"
 
@@ -258,3 +266,64 @@ def test_from_env(tmp_path):
     assert cfg.sender_id == "server-1"
     assert cfg.logger_id == "logsink-1"
     assert LogEdgeClient(cfg).enabled
+
+
+def test_send_record_endpoint_roundtrip(tmp_path):
+    """Generic send_record ships an arbitrary kind=endpoint record intact."""
+    sender, sign_key, sign_pem, logger, logger_kd = _fixtures(tmp_path)
+    srv = _LogEdgeServer(_pem_public(logger.kem.public_key()), _pem_public(logger.x.public_key()))
+    try:
+        client = LogEdgeClient(
+            LogEdgeConfig(url=srv.url, token="t", sender_id="builder-1", signing_key=str(sign_pem)),
+            strict=True,
+        )
+        client.send_record({
+            "kind": "endpoint",
+            "request_id": "rid-end-1",
+            "client_user_id": "user-42",
+            "session_id": "sess-1",
+            "endpoint": "api/inference/db-map/v3",
+            "builder_id": "builder-1",
+            "ts": "2026-09-05T10:15:30.123Z",
+            "query": "total revenue per product",
+            "llm_calls": [
+                {"path": "identify_v4_reason", "model": "p4",
+                 "prompt": "Is the orders table needed?", "response": "yes",
+                 "ts": "2026-09-05T10:15:30.123Z", "tokens_in": 10, "tokens_out": 1},
+            ],
+            "parsed": {"table_names": ["orders"]},
+            "error": None,
+        })
+        assert len(srv.posts) == 1
+        path, _, body = srv.posts[0]
+        assert path == "/log"
+        req = json.loads(body)
+        assert req["kind"] == "endpoint"
+
+        dec = Decryptor(provider=FileKeyProvider(logger_kd, "logsink-1"))
+        signed_doc = dec.decrypt_chunk(base64.b64decode(req["envelope"]))
+        out = _signing.verify(signed_doc, sign_key.public_key())
+        assert out["request_id"] == "rid-end-1"
+        record = json.loads(out["data"])
+        assert record["kind"] == "endpoint"
+        assert record["client_user_id"] == "user-42"
+        assert record["session_id"] == "sess-1"
+        assert record["parsed"] == {"table_names": ["orders"]}
+        assert record["llm_calls"][0]["path"] == "identify_v4_reason"
+        assert record["llm_calls"][0]["response"] == "yes"
+    finally:
+        srv.stop()
+
+
+def test_send_record_requires_kind_and_request_id(tmp_path):
+    _, sign_key, _, _, _ = _fixtures(tmp_path)
+    client = LogEdgeClient(
+        LogEdgeConfig(url="http://logsink:8086", token="t", sender_id="builder-1"),
+        strict=True, signing=sign_key,
+    )
+    with pytest.raises(ValueError):
+        client.send_record({"session_id": "x"})  # no kind
+    with pytest.raises(ValueError):
+        client.send_record({"kind": "endpoint"})  # no request_id
+    with pytest.raises(TypeError):
+        client.send_record("not-a-dict")

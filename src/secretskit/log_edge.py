@@ -6,10 +6,11 @@ plaintext, and it stores it in plaintext JSONL for development visibility.
 
     server encryptor ──sign + encrypt to logger──► /log (kind=prompt)
     spoke wrapper    ──sign + encrypt to logger──► /log (kind=response)
+    builder          ──sign + encrypt to logger──► /log (kind=endpoint)
 
 Wire format (``POST {url}/log``)::
 
-    {"kind": "prompt" | "response",
+    {"kind": "prompt" | "response" | "endpoint",
      "envelope": "<base64 envelope containing the signed record>"}
 
 The record inside the envelope is a signed document (see
@@ -17,9 +18,14 @@ The record inside the envelope is a signed document (see
 
     {"kind": ..., "request_id": ..., "endpoint": ...,
      "call": ..., "model": ..., "prompt": ... or "response": ...}
+    {"kind": "endpoint", "request_id": ..., "client_user_id": ...,
+     "session_id": ..., "endpoint": ..., "builder_id": ..., "ts": ...,
+     "llm_calls": [...], "parsed": ..., "error": ...}
 
-The logger correlates halves by ``request_id`` and appends plaintext lines
-to ``records.jsonl`` / ``pairs.jsonl``.
+The logger correlates prompt/response halves by ``request_id`` and appends
+plaintext lines to ``records.jsonl`` / ``pairs.jsonl``.  ``endpoint`` records
+are per client block request (every LLM call + the parsed result); they do not
+pair and are rendered to markdown by the sink.
 
 Enabled only when ``LOG_EDGE_URL`` is set.  ``LogEdgeClient`` never raises
 from a caller's perspective — the logging edge must never break the LLM
@@ -173,6 +179,24 @@ class LogEdgeClient:
             "call": call,
             "response": _as_text(response),
         }
+        self._deliver(record)
+
+    def send_record(self, record: dict) -> None:
+        """Ship an arbitrary signed + E2EE record to the logger.
+
+        Generic path used by the builder for ``kind="endpoint"`` records — one
+        per client block request (every LLM prompt/response pair + the parsed
+        result + header).  ``record`` must be a JSON-serialisable dict carrying
+        a ``kind`` and a ``request_id`` (the request_id doubles as the signed
+        document's replay id).  Delivery honours the client's ``background`` /
+        ``strict`` settings.
+        """
+        if not isinstance(record, dict):
+            raise TypeError("send_record expects a dict")
+        if not record.get("kind"):
+            raise ValueError("send_record requires a dict with a 'kind'")
+        if not record.get("request_id"):
+            raise ValueError("send_record requires a 'request_id'")
         self._deliver(record)
 
     def _ensure(self) -> tuple[Encryptor, object]:

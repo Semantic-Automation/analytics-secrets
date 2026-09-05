@@ -2,16 +2,19 @@
 
 `analytics-secrets` is a **library**, not a service — there's nothing to run.
 It is the shared crypto dependency consumed by `analytics-client`,
-`analytics-hub`, `analytics-edge`, and `analytics-spoke`.
+`analytics-hub`, `analytics-edge`, `analytics-builder`, and `analytics-spoke`
+(`analytics-tunnels` is transport-only and does not use it).
 
 ## Install (as a consumer)
 
 ```bash
-pip install "analytics-secrets @ git+https://github.com/Semantic-Automation/analytics-secrets.git@v0.6.0"
+pip install "analytics-secrets @ git+https://github.com/Semantic-Automation/analytics-secrets.git@v0.7.10"
 ```
 
-Public repo — no auth needed. Consumers pin the tag (the Containerfiles use
-`SECRETS_PIN=v0.6.0`).
+Public repo — no auth needed. Consumers pin a tag: Containerfiles use a
+`SECRETS_PIN` build arg (e.g. `ARG SECRETS_PIN=v0.7.8` in `analytics-spoke` /
+`analytics-hub`), requirements files pin the tag directly. Current release is
+**v0.7.10**.
 
 ## For local development of the library itself
 
@@ -28,6 +31,6 @@ pytest tests
 
 ## Release discipline
 
-- Bump the version in `pyproject.toml` for behavior changes.
-- Tag (`v0.7.0` etc.) — consumers pin the tag and upgrade deliberately.
-- Add a CHANGELOG entry per release.
+- Bump the version in **both** `pyproject.toml` and `src/secretskit/__init__.py`
+  (`__version__`) for behavior changes.
+- Tag (`v0.7.10`) — consumers pin the tag and upgrade deliberately.

@@ -41,7 +41,7 @@ from . import _transport_auth as transport_auth
 from . import _user_auth as user_auth
 from . import log_edge
 
-__version__ = "0.8.0"
+__version__ = "0.8.1"
 
 __all__ = [
     "AuthError",

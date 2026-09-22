@@ -29,9 +29,17 @@ DEFAULT_ALGS: tuple[str, ...] = ("RS256",)
 
 Fetch = Callable[[str, float], dict]
 
+# A non-banned User-Agent is required: Cloudflare's Browser Integrity Check on
+# the public auth hostname blocks the default ``Python-urllib/x.y`` signature
+# (Error 1010). Any explicit product UA passes.
+_USER_AGENT = "analytics-secrets/0.8.1 (+https://semanticautomation.in)"
+
 
 def _http_fetch(url: str, timeout_s: float) -> dict:
-    with urllib.request.urlopen(url, timeout=timeout_s) as resp:
+    req = urllib.request.Request(
+        url, headers={"User-Agent": _USER_AGENT, "Accept": "application/json"}
+    )
+    with urllib.request.urlopen(req, timeout=timeout_s) as resp:
         return json.loads(resp.read())
 
 

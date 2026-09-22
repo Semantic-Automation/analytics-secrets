@@ -8,7 +8,14 @@ changing these signatures.
 
 from ._api import Decryptor, Encryptor, unwrap_bytes, wrap_bytes
 from ._config import SecretsConfig
-from ._errors import ConfigurationError, DecryptError, SecretsError, UnknownPeerError
+from ._errors import (
+    AuthError,
+    ConfigurationError,
+    DecryptError,
+    SecretsError,
+    UnknownPeerError,
+)
+from ._user_auth import VerifiedIdentity
 from ._hygiene import disable_core_dumps, mlock_memory, munlock_memory, wipe
 from ._keys import (
     BootKeyProvider,
@@ -25,14 +32,19 @@ from ._keys import (
     valid_user_id,
 )
 from ._hybrid import PeerPublic
+from . import _dpop as dpop
 from . import _manifest as manifest
+from . import _oidc as oidc
 from . import _signing as signing
+from . import _tiers as tiers
 from . import _transport_auth as transport_auth
+from . import _user_auth as user_auth
 from . import log_edge
 
-__version__ = "0.7.10"
+__version__ = "0.8.0"
 
 __all__ = [
+    "AuthError",
     "BootKeyProvider",
     "ConfigurationError",
     "DecryptError",
@@ -47,7 +59,9 @@ __all__ = [
     "SecretsConfig",
     "SecretsError",
     "UnknownPeerError",
+    "VerifiedIdentity",
     "disable_core_dumps",
+    "dpop",
     "ensure_keyring",
     "generate_identity",
     "load_peer_public",
@@ -55,11 +69,14 @@ __all__ = [
     "manifest",
     "mlock_memory",
     "munlock_memory",
+    "oidc",
     "save_identity",
     "save_peer",
     "signing",
+    "tiers",
     "transport_auth",
     "unwrap_bytes",
+    "user_auth",
     "valid_user_id",
     "wipe",
     "wrap_bytes",

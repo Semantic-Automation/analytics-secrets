@@ -9,6 +9,12 @@ that use it. It is pip-installed by every service repo (`analytics-client`,
 `analytics-tunnels` deliberately does **not** depend on it (transport-only, no
 crypto — auth is injected by consumers).
 
+> **Public-host gotcha:** Cloudflare on `*.semanticautomation.in` blocks the
+> default `Python-urllib` User-Agent with **403 Error 1010
+> (`browser_signature_banned`)**. Set an explicit `User-Agent` on every
+> programmatic request (the JWKS fetch already does). See `analytics-wiki` →
+> `architecture/agent-reference.md` → "Operational gotchas".
+
 ## What it does
 
 - **Hybrid post-quantum envelopes:** ML-KEM-768 + X25519 → HKDF-SHA256 →
